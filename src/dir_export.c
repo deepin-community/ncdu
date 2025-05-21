@@ -1,6 +1,6 @@
 /* ncdu - NCurses Disk Usage
 
-  Copyright (c) 2007-2023 Yoran Heling
+  Copyright (c) Yorhel
 
   Permission is hereby granted, free of charge, to any person obtaining
   a copy of this software and associated documentation files (the
@@ -98,17 +98,24 @@ static void output_info(struct dir *d, const char *name, struct dir_ext *e, unsi
   }
 
   if(e) {
-    fputs(",\"uid\":", stream);
-    output_int(e->uid);
-    fputs(",\"gid\":", stream);
-    output_int(e->gid);
-    fputs(",\"mode\":", stream);
-    output_int(e->mode);
-    fputs(",\"mtime\":", stream);
-    output_int(e->mtime);
+    if(e->flags & FFE_UID) {
+      fputs(",\"uid\":", stream);
+      output_int(e->uid);
+    }
+    if(e->flags & FFE_GID) {
+      fputs(",\"gid\":", stream);
+      output_int(e->gid);
+    }
+    if(e->flags & FFE_MODE) {
+      fputs(",\"mode\":", stream);
+      output_int(e->mode);
+    }
+    if(e->flags & FFE_MTIME) {
+      fputs(",\"mtime\":", stream);
+      output_int(e->mtime);
+    }
   }
 
-  /* TODO: Including the actual number of links would be nicer. */
   if(d->flags & FF_HLNKC) {
     fputs(",\"ino\":", stream);
     output_int(d->ino);
@@ -123,7 +130,7 @@ static void output_info(struct dir *d, const char *name, struct dir_ext *e, unsi
   if(d->flags & FF_EXL)
     fputs(",\"excluded\":\"pattern\"", stream);
   else if(d->flags & FF_OTHFS)
-    fputs(",\"excluded\":\"othfs\"", stream);
+    fputs(",\"excluded\":\"otherfs\"", stream);
   else if(d->flags & FF_KERNFS)
     fputs(",\"excluded\":\"kernfs\"", stream);
   else if(d->flags & FF_FRMLNK)

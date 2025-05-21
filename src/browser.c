@@ -1,6 +1,6 @@
 /* ncdu - NCurses Disk Usage
 
-  Copyright (c) 2007-2023 Yoran Heling
+  Copyright (c) Yorhel
 
   Permission is hereby granted, free of charge, to any person obtaining
   a copy of this software and associated documentation files (the
@@ -68,15 +68,21 @@ static void browse_draw_info(struct dir *dr) {
 
     ncaddstr(2,  9, cropstr(dr->name, 49));
     ncaddstr(3,  9, cropstr(getpath(dr->parent), 49));
-    ncaddstr(4,  9, dr->flags & FF_DIR ? "Directory" : dr->flags & FF_FILE ? "File" : "Other");
 
-    if(e) {
+    if(!e)
+      ncaddstr(4,  9, dr->flags & FF_DIR ? "Directory" : dr->flags & FF_FILE ? "File" : "Other");
+    else {
       time_t t = (time_t)e->mtime;
-      ncaddstr(4, 9, fmtmode(e->mode));
-      ncprint(4, 26, "%d", e->uid);
-      ncprint(4, 38, "%d", e->gid);
-      strftime(mbuf, sizeof(mbuf), "%Y-%m-%d %H:%M:%S %z", localtime(&t));
-      ncaddstr(5, 18, mbuf);
+      if(e->flags & FFE_MODE) ncaddstr(4, 9, fmtmode(e->mode));
+      else ncaddstr(4, 9, "N/A");
+      if(e->flags & FFE_UID) ncprint(4, 26, "%u", e->uid);
+      else ncaddstr(4, 26, "N/A");
+      if(e->flags & FFE_GID) ncprint(4, 38, "%u", e->gid);
+      else ncaddstr(4, 38, "N/A");
+      if(e->flags & FFE_MTIME) {
+        strftime(mbuf, sizeof(mbuf), "%Y-%m-%d %H:%M:%S %z", localtime(&t));
+        ncaddstr(5, 18, mbuf);
+      } else ncaddstr(5, 18, "N/A");
     }
 
     ncmove(6, 18);
@@ -130,9 +136,16 @@ static void browse_draw_flag(struct dir *n, int *x) {
 }
 
 
+const char *graph_styles[3][9] = {
+  { " ", " ", " ", " ", " ", " ", " ", " ", "#" },
+  { " ", " ", " ", " ", "▌", "▌", "▌", "▌", "█" },
+  { " ", "▏", "▎", "▍", "▌", "▋", "▊", "▉", "█" },
+};
+
 static void browse_draw_graph(struct dir *n, int *x) {
   float pc = 0.0f;
-  int o, i, bar_size = wincols/7 > 10 ? wincols/7 : 10;
+  int64_t max, num, perblock, frac;
+  int i, bar_size = wincols/7 > 10 ? wincols/7 : 10;
   enum ui_coltype c = n->flags & FF_BSEL ? UIC_SEL : UIC_DEFAULT;
 
   if(!graph)
@@ -160,9 +173,21 @@ static void browse_draw_graph(struct dir *n, int *x) {
   /* graph (10+ columns) */
   if(graph == 1 || graph == 3) {
     uic_set(c == UIC_SEL ? UIC_GRAPH_SEL : UIC_GRAPH);
-    o = (int)((float)bar_size*((float)(show_as ? n->asize : n->size) / (float)(show_as ? dirlist_maxa : dirlist_maxs)));
-    for(i=0; i<bar_size; i++)
-      addch(i < o ? '#' : ' ');
+    max = show_as ? dirlist_maxa : dirlist_maxs;
+    num = show_as ? n->asize : n->size;
+    if (max < bar_size) {
+        max *= bar_size;
+        num *= bar_size;
+    } else if (max > ((int64_t)1)<<56) { /* Prevent overflow in calculation below */
+        max <<= 5;
+        num <<= 5;
+    }
+    perblock = max / bar_size;
+    for(i=0; i<bar_size; i++) {
+      frac = (num * 8) / (perblock < 1 ? 1 : perblock);
+      addstr(graph_styles[graph_style][frac > 8 ? 8 : frac < 0 ? 0 : frac]);
+      num -= perblock;
+    }
   }
 
   addchc(c, ']');
@@ -289,15 +314,18 @@ void browse_draw(void) {
   mvhline(winrows-1, 0, ' ', wincols);
   if(t) {
     if(!show_as) attron(A_BOLD);
-    mvaddstr(winrows-1, 0, " Total disk usage: ");
+    mvaddchc(UIC_HD, winrows-1, 0, show_as ? ' ' : '*');
+    addstr("Total disk usage: ");
     if(!show_as) attroff(A_BOLD);
     printsize(UIC_HD, t->parent->size);
     if(show_as) attron(A_BOLD);
-    addstrc(UIC_HD, "  Apparent size: ");
+    addstrc(UIC_HD, "  ");
+    addchc(UIC_HD, show_as ? '*' : ' ');
+    addstrc(UIC_HD, "Apparent size: ");
     if(show_as) attroff(A_BOLD);
     uic_set(UIC_NUM_HD);
     printsize(UIC_HD, t->parent->asize);
-    addstrc(UIC_HD, "  Items: ");
+    addstrc(UIC_HD, "   Items: ");
     uic_set(UIC_NUM_HD);
     printw("%d", t->parent->items);
   } else

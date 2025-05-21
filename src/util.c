@@ -1,6 +1,6 @@
 /* ncdu - NCurses Disk Usage
 
-  Copyright (c) 2007-2023 Yoran Heling
+  Copyright (c) Yorhel
 
   Permission is hereby granted, free of charge, to any person obtaining
   a copy of this software and associated documentation files (the
@@ -30,11 +30,13 @@
 #include <ncurses.h>
 #include <stdarg.h>
 #include <unistd.h>
+#include <pwd.h>
+
 #ifdef HAVE_LOCALE_H
 #include <locale.h>
 #endif
 
-int uic_theme;
+int uic_theme = 0;
 int winrows, wincols;
 int subwinr, subwinc;
 static char thou_sep;
@@ -74,7 +76,7 @@ float formatsize(int64_t from, const char **unit) {
   float r = from;
   if (si) {
     if(r < 1000.0f)   { *unit = " B"; }
-    else if(r < 1e6f) { *unit = "KB"; r/=1e3f; }
+    else if(r < 1e6f) { *unit = "kB"; r/=1e3f; }
     else if(r < 1e9f) { *unit = "MB"; r/=1e6f; }
     else if(r < 1e12f){ *unit = "GB"; r/=1e9f; }
     else if(r < 1e15f){ *unit = "TB"; r/=1e12f; }
@@ -441,7 +443,7 @@ void addparentstats(struct dir *d, int64_t size, int64_t asize, uint64_t mtime, 
   char buf[128];\
   while((ptr = f) == NULL) {\
     close_nc();\
-    write(2, oom_msg, sizeof(oom_msg));\
+    write(2, oom_msg, sizeof(oom_msg)-1);\
     read(0, buf, sizeof(buf));\
   }\
   return ptr;
@@ -454,4 +456,42 @@ char *xstrdup(const char *str) {
   char *r = xmalloc(strlen(str)+1);
   strcpy(r, str);
   return r;
+}
+
+
+/* Expands '~' and '~user' */
+char *expanduser(const char *path) {
+  size_t len, size;
+  struct passwd *pwd;
+  char *home = NULL, *tmp;
+
+  if(path[0] != '~') return xstrdup(path);
+  len = strcspn(path+1, "/");
+
+  if(len == 0) {
+    home = getenv("HOME");
+    if(!home) {
+      pwd = getpwuid(getuid());
+      if(pwd) home = pwd->pw_dir;
+    }
+  } else {
+    tmp = xmalloc(len+1);
+    memcpy(tmp, path+1, len);
+    tmp[len] = 0;
+    pwd = getpwnam(tmp);
+    free(tmp);
+    if(pwd) home = pwd->pw_dir;
+  }
+  if(!home) return xstrdup(path);
+
+  size = strlen(home);
+  while(size > 0 && home[size-1] == '/') size--;
+  home[size] = 0;
+
+  if(size == 0 && path[len+1] == 0) return xstrdup("/");
+
+  size += strlen(path) - len;
+  tmp = xmalloc(size);
+  snprintf(tmp, size, "%s%s", home, path+1+len);
+  return tmp;
 }

@@ -1,10 +1,10 @@
 Format: https://www.debian.org/doc/packaging-manuals/copyright-format/1.0/
 Upstream-Name: ncdu
 Upstream-Contact: Yoran Heling <projects@yorhel.nl>
-Source: http://dev.yorhel.nl/ncdu/
+Source: https://dev.yorhel.nl/ncdu
 
 Files: *
-Copyright: 2007-2022 Yoran Heling
+Copyright: 2007-2025 Yoran Heling
 License: Expat
 
 Files: deps/khashl.h
@@ -18,8 +18,7 @@ License: Zlib
 Files: debian/*
 Copyright: 2007-2008 Luca Bedogni <me@lucabedogni.it>
            2009-2018 Eugene V. Lyubimkin <jackyf@debian.org>
-           2022-2023 Christian Göttsche <cgzones@googlemail.com>
-           2023-2023 xiangzelong <xiangzelong@deepin.org>
+           2022-2025 Christian Göttsche <cgzones@googlemail.com>
 License: GPL
 
 License: Expat

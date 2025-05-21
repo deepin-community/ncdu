@@ -1,6 +1,6 @@
 /* ncdu - NCurses Disk Usage
 
-  Copyright (c) 2007-2023 Yoran Heling
+  Copyright (c) Yorhel
 
   Permission is hereby granted, free of charge, to any person obtaining
   a copy of this software and associated documentation files (the
@@ -77,6 +77,8 @@ extern int dirlist_sort_desc, dirlist_sort_col, dirlist_sort_df;
 
 /* set with dirlist_set_hidden() */
 extern int dirlist_hidden;
+
+extern int dirlist_natsort;
 
 /* maximum size of an item in the opened dir */
 extern int64_t dirlist_maxs, dirlist_maxa;
