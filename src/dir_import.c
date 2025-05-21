@@ -1,6 +1,6 @@
 /* ncdu - NCurses Disk Usage
 
-  Copyright (c) 2007-2023 Yoran Heling
+  Copyright (c) Yorhel
 
   Permission is hereby granted, free of charge, to any person obtaining
   a copy of this software and associated documentation files (the
@@ -187,7 +187,7 @@ static int cons(void) {
 
 
 static int rstring_esc(char **dest, int *destlen) {
-  unsigned int n;
+  unsigned int n, s;
 
   C(rfill1);
 
@@ -204,8 +204,22 @@ static int rstring_esc(char **dest, int *destlen) {
   case 'u':
     C(rfill(5));
 #define hn(n) (n >= '0' && n <= '9' ? n-'0' : n >= 'A' && n <= 'F' ? n-'A'+10 : n >= 'a' && n <= 'f' ? n-'a'+10 : 1<<16)
-    n = (hn(ctx->buf[1])<<12) + (hn(ctx->buf[2])<<8) + (hn(ctx->buf[3])<<4) + hn(ctx->buf[4]);
-#undef hn
+#define h4(b) (hn((b)[0])<<12) + (hn((b)[1])<<8) + (hn((b)[2])<<4) + hn((b)[3])
+    n = h4(ctx->buf+1);
+    con(5);
+    E(n >= (1<<16), "Invalid \\u escape");
+    E((n & 0xfc00) == 0xdc00, "Unexpected low surrogate");
+    if((n & 0xfc00) == 0xd800) { /* high surrogate */
+      C(rfill(7));
+      E(ctx->buf[0] != '\\', "Expected low surrogate");
+      E(ctx->buf[1] != 'u', "Expected low surrogate");
+      s = h4(ctx->buf+2);
+      con(6);
+      E(s >= (1<<16), "Invalid \\u escape");
+      E((s & 0xfc00) != 0xdc00, "Expected low surrogate");
+      n = 0x10000 + (((n & 0x03ff) << 10) | (s & 0x03ff));
+    }
+
     if(n <= 0x007F) {
       ap(n);
     } else if(n <= 0x07FF) {
@@ -215,9 +229,14 @@ static int rstring_esc(char **dest, int *destlen) {
       ap(0xE0 | (n>>12));
       ap(0x80 | ((n>>6) & 0x3F));
       ap(0x80 | (n & 0x3F));
-    } else /* this happens if there was an invalid character (n >= (1<<16)) */
-      E(1, "Invalid character in \\u escape");
-    con(5);
+    } else {
+      ap(0xF0 | (n>>18));\
+      ap(0x80 | ((n>>12) & 0x3F));
+      ap(0x80 | ((n>>6) & 0x3F));
+      ap(0x80 | (n & 0x3F));
+    }
+#undef hn
+#undef h4
     break;
   default:
     E(1, "Invalid escape sequence");
@@ -450,20 +469,24 @@ static int iteminfo(void) {
       C(rint64(&iv, UINT64_MAX));
       ctx->buf_dir->ino = iv;
     } else if(strcmp(ctx->val, "uid") == 0) {        /* uid */
-      C(rint64(&iv, INT32_MAX));
+      C(rint64(&iv, UINT32_MAX));
       ctx->buf_dir->flags |= FF_EXT;
+      ctx->buf_ext->flags |= FFE_UID;
       ctx->buf_ext->uid = iv;
     } else if(strcmp(ctx->val, "gid") == 0) {        /* gid */
-      C(rint64(&iv, INT32_MAX));
+      C(rint64(&iv, UINT32_MAX));
       ctx->buf_dir->flags |= FF_EXT;
+      ctx->buf_ext->flags |= FFE_GID;
       ctx->buf_ext->gid = iv;
     } else if(strcmp(ctx->val, "mode") == 0) {       /* mode */
       C(rint64(&iv, UINT16_MAX));
       ctx->buf_dir->flags |= FF_EXT;
+      ctx->buf_ext->flags |= FFE_MODE;
       ctx->buf_ext->mode = iv;
     } else if(strcmp(ctx->val, "mtime") == 0) {      /* mtime */
       C(rint64(&iv, UINT64_MAX));
       ctx->buf_dir->flags |= FF_EXT;
+      ctx->buf_ext->flags |= FFE_MTIME;
       ctx->buf_ext->mtime = iv;
       /* Accept decimal numbers, but discard the fractional part because our data model doesn't support it. */
       if(*ctx->buf == '.') {
@@ -490,7 +513,7 @@ static int iteminfo(void) {
         C(rlit("false", 5));
     } else if(strcmp(ctx->val, "excluded") == 0) {   /* excluded */
       C(rstring(ctx->val, 8));
-      if(strcmp(ctx->val, "otherfs") == 0)
+      if(strcmp(ctx->val, "otherfs") == 0 || strcmp(ctx->val, "othfs") == 0)
         ctx->buf_dir->flags |= FF_OTHFS;
       else if(strcmp(ctx->val, "kernfs") == 0)
         ctx->buf_dir->flags |= FF_KERNFS;

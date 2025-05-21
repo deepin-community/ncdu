@@ -1,6 +1,6 @@
 /* ncdu - NCurses Disk Usage
 
-  Copyright (c) 2007-2023 Yoran Heling
+  Copyright (c) Yorhel
 
   Permission is hereby granted, free of charge, to any person obtaining
   a copy of this software and associated documentation files (the
@@ -47,6 +47,7 @@ int confirm_quit = 0;
 int si = 0;
 int show_as = 0;
 int graph = 1;
+int graph_style = 0;
 int show_items = 0;
 int show_mtime = 0;
 
@@ -128,6 +129,7 @@ struct argparser {
   char *last_arg;
   char shortbuf[2];
   char argsep;
+  char ignerror;
 } argparser_state;
 
 static char *argparser_pop(struct argparser *p) {
@@ -147,14 +149,14 @@ static int argparser_shortopt(struct argparser *p, char *buf) {
   return 1;
 }
 
-/* Returns 0 when done, 1 if there's an option, 2 if there's a positional argument. */
+/* Returns -1 on error (only when ignerror), 0 when done, 1 if there's an option, 2 if there's a positional argument. */
 static int argparser_next(struct argparser *p) {
-  if(p->last_arg) die("Option '%s' does not expect an argument.\n", p->last);
+  if(p->last_arg) { if(p->ignerror) return -1; die("Option '%s' does not expect an argument.\n", p->last); }
   if(p->shortopt) return argparser_shortopt(p, p->shortopt);
   p->last = argparser_pop(p);
   if(!p->last) return 0;
   if(p->argsep || !*p->last || *p->last != '-') return 2;
-  if(!p->last[1]) die("Invalid option '-'.\n");
+  if(!p->last[1]) { if(p->ignerror) return -1; die("Invalid option '-'.\n"); }
   if(p->last[1] == '-' && !p->last[2]) { /* '--' argument separator */
     p->argsep = 1;
     return argparser_next(p);
@@ -184,14 +186,14 @@ static char *argparser_arg(struct argparser *p) {
     return tmp;
   }
   tmp = argparser_pop(p);
-  if(!tmp) die("Option '%s' requires an argument.\n", p->last);
+  if(!tmp) { if(p->ignerror) return NULL; die("Option '%s' requires an argument.\n", p->last); }
   return tmp;
 }
 
 #define OPT(_s) (strcmp(argparser_state.last, (_s)) == 0)
 #define ARG (argparser_arg(&argparser_state))
 
-static int arg_option(void) {
+static int arg_option(int infile) {
   char *arg, *tmp;
   if(OPT("-q") || OPT("--slow-ui-updates")) update_delay = 2000;
   else if(OPT("--fast-ui-updates")) update_delay = 100;
@@ -219,8 +221,18 @@ static int arg_option(void) {
   else if(OPT("--hide-percent")) graph &= 1;
   else if(OPT("--group-directories-first")) dirlist_sort_df = 1;
   else if(OPT("--no-group-directories-first")) dirlist_sort_df = 0;
-  else if(OPT("--sort")) {
+  else if(OPT("--enable-natsort")) dirlist_natsort = 1;
+  else if(OPT("--disable-natsort")) dirlist_natsort = 0;
+  else if(OPT("--graph-style")) {
     arg = ARG;
+    if (!arg) return 1;
+    else if (strcmp(arg, "hash") == 0) graph_style = 0;
+    else if (strcmp(arg, "half-block") == 0) graph_style = 1;
+    else if (strcmp(arg, "eighth-block") == 0 || strcmp(arg, "eigth-block") == 0) graph_style = 2;
+    else if (!argparser_state.ignerror) die("Unknown --graph-style option: %s.\n", arg);
+  } else if(OPT("--sort")) {
+    arg = ARG;
+    if (!arg) return 1;
     tmp = strrchr(arg, '-');
     if(tmp && (strcmp(tmp, "-asc") == 0 || strcmp(tmp, "-desc") == 0)) *tmp = 0;
 
@@ -239,7 +251,8 @@ static int arg_option(void) {
     } else if(strcmp(arg, "mtime") == 0) {
       dirlist_sort_col = DL_COL_MTIME;
       dirlist_sort_desc = 0;
-    } else die("Invalid argument to --sort: '%s'.\n", arg);
+    } else if(argparser_state.ignerror) return 1;
+    else die("Invalid argument to --sort: '%s'.\n", arg);
 
     if(tmp && !*tmp) dirlist_sort_desc = tmp[1] == 'd';
   } else if(OPT("--apparent-size")) show_as = 1;
@@ -251,10 +264,18 @@ static int arg_option(void) {
   else if(OPT("--no-si")) si = 0;
   else if(OPT("-L") || OPT("--follow-symlinks")) follow_symlinks = 1;
   else if(OPT("--no-follow-symlinks")) follow_symlinks = 0;
-  else if(OPT("--exclude")) exclude_add(ARG);
-  else if(OPT("-X") || OPT("--exclude-form")) {
+  else if(OPT("--exclude")) {
     arg = ARG;
-    if(exclude_addfile(arg)) die("Can't open %s: %s\n", arg, strerror(errno));
+    if(!arg) return 1;
+    if(infile) arg = expanduser(arg);
+    exclude_add(arg);
+    if(infile) free(arg);
+  } else if(OPT("-X") || OPT("--exclude-from")) {
+    arg = ARG;
+    if(!arg) return 1;
+    if(infile) arg = expanduser(arg);
+    if(exclude_addfile(arg)) { if (argparser_state.ignerror) return 1; die("Can't open %s: %s\n", arg, strerror(errno)); }
+    if(infile) free(arg);
   } else if(OPT("--exclude-caches")) cachedir_tags = 1;
   else if(OPT("--include-caches")) cachedir_tags = 0;
   else if(OPT("--exclude-kernfs")) exclude_kernfs = 1;
@@ -267,46 +288,72 @@ static int arg_option(void) {
   else if(OPT("--no-confirm-delete")) delete_confirm = 0;
   else if(OPT("--color")) {
     arg = ARG;
-    if(strcmp(arg, "off") == 0) uic_theme = 0;
+    if (!arg) return 1;
+    else if(strcmp(arg, "off") == 0) uic_theme = 0;
     else if(strcmp(arg, "dark") == 0) uic_theme = 1;
     else if(strcmp(arg, "dark-bg") == 0) uic_theme = 2;
-    else die("Unknown --color option: %s\n", arg);
+    else if (!argparser_state.ignerror) die("Unknown --color option: %s\n", arg);
   } else return 0;
   return 1;
 }
 
 static void arg_help(void) {
-  printf("ncdu <options> <directory>\n\n");
-  printf("  -h,--help                  This help message\n");
-  printf("  -q                         Quiet mode, refresh interval 2 seconds\n");
-  printf("  -v,-V,--version            Print version\n");
-  printf("  -x                         Same filesystem\n");
-  printf("  -e                         Enable extended information\n");
-  printf("  -r                         Read only\n");
-  printf("  -o FILE                    Export scanned directory to FILE\n");
-  printf("  -f FILE                    Import scanned directory from FILE\n");
-  printf("  -0,-1,-2                   UI to use when scanning (0=none,2=full ncurses)\n");
-  printf("  --si                       Use base 10 (SI) prefixes instead of base 2\n");
-  printf("  --exclude PATTERN          Exclude files that match PATTERN\n");
-  printf("  -X, --exclude-from FILE    Exclude files that match any pattern in FILE\n");
-  printf("  -L, --follow-symlinks      Follow symbolic links (excluding directories)\n");
-  printf("  --exclude-caches           Exclude directories containing CACHEDIR.TAG\n");
+  printf(
+  "ncdu <options> <directory>\n"
+  "\n"
+  "Mode selection:\n"
+  "  -h, --help                 This help message\n"
+  "  -v, -V, --version          Print version\n"
+  "  -f FILE                    Import scanned directory from FILE\n"
+  "  -o FILE                    Export scanned directory to FILE in JSON format\n"
+  "  -e, --extended             Enable extended information\n"
+  "  --ignore-config            Don't load config files\n"
+  "\n"
+  "Scan options:\n"
+  "  -x, --one-file-system      Stay on the same filesystem\n"
+  "  --exclude PATTERN          Exclude files that match PATTERN\n"
+  "  -X, --exclude-from FILE    Exclude files that match any pattern in FILE\n"
+  "  --exclude-caches           Exclude directories containing CACHEDIR.TAG\n"
+  "  -L, --follow-symlinks      Follow symbolic links (excluding directories)\n"
 #if HAVE_LINUX_MAGIC_H && HAVE_SYS_STATFS_H && HAVE_STATFS
-  printf("  --exclude-kernfs           Exclude Linux pseudo filesystems (procfs,sysfs,cgroup,...)\n");
+  "  --exclude-kernfs           Exclude Linux pseudo filesystems (procfs,sysfs,cgroup,...)\n"
 #endif
 #if HAVE_SYS_ATTR_H && HAVE_GETATTRLIST && HAVE_DECL_ATTR_CMNEXT_NOFIRMLINKPATH
-  printf("  --exclude-firmlinks        Exclude firmlinks on macOS\n");
+  "  --exclude-firmlinks        Exclude firmlinks on macOS\n"
 #endif
-  printf("  --confirm-quit             Confirm quitting ncdu\n");
-  printf("  --color SCHEME             Set color scheme (off/dark/dark-bg)\n");
+  "\n"
+  "Interface options:\n"
+  "  -0, -1, -2                 UI to use when scanning (0=none,2=full ncurses)\n"
+  "  -q, --slow-ui-updates      \"Quiet\" mode, refresh interval 2 seconds\n"
+  "  --enable-shell             Enable/disable shell spawning feature\n"
+  "  --enable-delete            Enable/disable file deletion feature\n"
+  "  --enable-refresh           Enable/disable directory refresh feature\n"
+  "  -r                         Read only (--disable-delete)\n"
+  "  -rr                        Read only++ (--disable-delete & --disable-shell)\n"
+  "  --si                       Use base 10 (SI) prefixes instead of base 2\n"
+  "  --apparent-size            Show apparent size instead of disk usage by default\n"
+  "  --hide-hidden              Hide \"hidden\" or excluded files by default\n"
+  "  --show-itemcount           Show item count column by default\n"
+  "  --show-mtime               Show mtime column by default (requires `-e`)\n"
+  "  --show-graph               Show graph column by default\n"
+  "  --show-percent             Show percent column by default\n"
+  "  --graph-style STYLE        hash / half-block / eighth-block\n"
+  "  --sort COLUMN-(asc/desc)   disk-usage / name / apparent-size / itemcount / mtime\n"
+  "  --enable-natsort           Use natural order when sorting by name\n"
+  "  --group-directories-first  Sort directories before files\n"
+  "  --confirm-quit             Ask confirmation before quitting ncdu\n"
+  "  --no-confirm-delete        Don't ask confirmation before deletion\n"
+  "  --color SCHEME             off / dark / dark-bg\n"
+  "\n"
+  "Refer to `man ncdu` for more information.\n");
   exit(0);
 }
 
 
 static void config_read(const char *fn) {
   FILE *f;
-  char buf[1024], *line, *tmp, **args = NULL, **argsi;
-  int r, len, argslen = 0, argssize = 0;
+  char buf[1024], *line, *tmp, *args[3];
+  int r, len;
 
   if((f = fopen(fn, "r")) == NULL) {
     if(errno == ENOENT || errno == ENOTDIR) return;
@@ -321,35 +368,34 @@ static void config_read(const char *fn) {
     line[len] = 0;
     if(len == 0 || *line == '#') continue;
 
-    /* Reserve at least 3 spots, one for the option, one for a possible argument and one for the final NULL. */
-    if(argslen+3 >= argssize) {
-      argssize = argssize ? argssize*2 : 32;
-      args = xrealloc(args, sizeof(char *)*argssize);
+    memset(&argparser_state, 0, sizeof(struct argparser));
+    argparser_state.argv = args;
+
+    if (*line == '@') {
+        argparser_state.ignerror = 1;
+        line++;
+        if (!*line || *line == '#') continue;
     }
-    for(tmp=line; *tmp && *tmp != ' ' && *tmp != '\t' && *tmp != '='; tmp++);
+    args[argparser_state.argc++] = line;
+
+    for(tmp=line; *tmp && *tmp != ' ' && *tmp != '\t'; tmp++);
     while(*tmp && (*tmp == ' ' || *tmp == '\t')) {
       *tmp = 0;
       tmp++;
     }
-    args[argslen++] = xstrdup(line);
-    if(*tmp) args[argslen++] = xstrdup(tmp);
+    if(*tmp) args[argparser_state.argc++] = tmp;
+    args[argparser_state.argc] = NULL;
+
+    while((r = argparser_next(&argparser_state)) > 0) {
+      if(r == 2 || !arg_option(1)) {
+        if (argparser_state.ignerror) break;
+        die("Unknown option in config file '%s': %s.\nRun with --ignore-config to skip reading config files.\n", fn, argparser_state.last);
+      }
+    }
   }
   if(ferror(f))
     die("Error reading from %s: %s\nRun with --ignore-config to skip reading config files.\n", fn, strerror(errno));
   fclose(f);
-  if(!argslen) return;
-
-  args[argslen] = NULL;
-  memset(&argparser_state, 0, sizeof(struct argparser));
-  argparser_state.argv = args;
-  argparser_state.argc = argslen;
-
-  while((r = argparser_next(&argparser_state)) > 0)
-    if(r == 2 || !arg_option())
-      die("Unknown option in config file '%s': %s.\nRun with --ignore-config to skip reading config files.\n", fn, argparser_state.last);
-
-  for(argsi=args; argsi && *argsi; argsi++) free(*argsi);
-  free(args);
 }
 
 
@@ -392,7 +438,7 @@ static void argv_parse(int argc, char **argv) {
     else if(OPT("-o")) export = ARG;
     else if(OPT("-f")) import = ARG;
     else if(OPT("--ignore-config")) {}
-    else if(!arg_option()) die("Unknown option '%s'.\n", argparser_state.last);
+    else if(!arg_option(0)) die("Unknown option '%s'.\n", argparser_state.last);
   }
 
 #if !(HAVE_LINUX_MAGIC_H && HAVE_SYS_STATFS_H && HAVE_STATFS)
@@ -471,7 +517,6 @@ void close_nc(void) {
 
 int main(int argc, char **argv) {
   read_locale();
-  uic_theme = getenv("NO_COLOR") ? 0 : 2;
   config_load(argc, argv);
   argv_parse(argc, argv);
 

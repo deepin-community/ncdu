@@ -1,6 +1,6 @@
 /* ncdu - NCurses Disk Usage
 
-  Copyright (c) 2007-2023 Yoran Heling
+  Copyright (c) Yorhel
 
   Permission is hereby granted, free of charge, to any person obtaining
   a copy of this software and associated documentation files (the
@@ -189,6 +189,8 @@ void *xcalloc(size_t, size_t);
 void *xrealloc(void *, size_t);
 
 char *xstrdup(const char *);
+
+char *expanduser(const char *);
 
 #endif
 

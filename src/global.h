@@ -1,6 +1,6 @@
 /* ncdu - NCurses Disk Usage
 
-  Copyright (c) 2007-2023 Yoran Heling
+  Copyright (c) Yorhel
 
   Permission is hereby granted, free of charge, to any person obtaining
   a copy of this software and associated documentation files (the
@@ -54,6 +54,12 @@
 #define FF_KERNFS 0x200 /* excluded because it was a Linux pseudo filesystem */
 #define FF_FRMLNK 0x400 /* excluded because it was a firmlink */
 
+/* Ext mode flags (struct dir_ext -> flags) */
+#define FFE_MTIME 0x01
+#define FFE_UID   0x02
+#define FFE_GID   0x04
+#define FFE_MODE  0x08
+
 /* Program states */
 #define ST_CALC   0
 #define ST_BROWSE 1
@@ -88,8 +94,9 @@ struct dir {
  * macros to help manage this. */
 struct dir_ext {
   uint64_t mtime;
-  int uid, gid;
+  unsigned int uid, gid;
   unsigned short mode;
+  unsigned char flags;
 };
 
 
@@ -117,6 +124,7 @@ extern int si;
 extern int show_as;
 /* graph display setting */
 extern int graph;
+extern int graph_style;
 /* column visibility */
 extern int show_items;
 extern int show_mtime;

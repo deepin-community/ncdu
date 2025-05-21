@@ -1,9 +1,42 @@
-ncdu (1.18.1-0deepin1) unstable; urgency=medium
+ncdu (1.22-1) unstable; urgency=medium
 
-  * Fix build on non-Linux platforms
-  * New upstream version 1.18 form https://dev.yorhel.nl/ncdu
+  * New upstream version 1.22
 
- -- xiangzelong <xiangzelong@deepin.org>  Tue, 14 Mar 2023 12:01:51 +0800
+  * d/patches: drop patches applied upstream
+  * d/control: bump to std version 4.7.2 (no further changes)
+
+ -- Christian Göttsche <cgzones@googlemail.com>  Sun, 09 Mar 2025 13:26:11 +0100
+
+ncdu (1.21-2) unstable; urgency=medium
+
+  * d/patches: cherry-pick upstream commits
+    - Use kB instead of KB in --si mode
+    - Fix supported range of uid/gid numbers
+  * d/copyright: bump years
+
+ -- Christian Göttsche <cgzones@googlemail.com>  Sun, 16 Feb 2025 19:09:59 +0100
+
+ncdu (1.21-1) unstable; urgency=medium
+
+  * New upstream version 1.21 (Closes: #1089229)
+
+  * d/control:
+    - set myself as Maintainer (Closes: #1089284)
+    - bump to std version 4.7.0 (no further changes)
+    - switch from pkg-config to pkgconf
+    - add Vcs fields
+  * d/copyright: bump years and use https URL
+  * d/salsa-ci.yml: add standard salsa-ci configuration
+
+ -- Christian Göttsche <cgzones@googlemail.com>  Mon, 30 Dec 2024 19:22:14 +0100
+
+ncdu (1.19-0.1) unstable; urgency=medium
+
+  * Non-maintainer upload.
+  * New upstream version 1.19
+  * d/patches: drop upstream applied ones
+
+ -- Christian Göttsche <cgzones@googlemail.com>  Wed, 13 Sep 2023 19:39:36 +0200
 
 ncdu (1.18-0.2) unstable; urgency=medium
 
@@ -201,7 +234,7 @@ ncdu (1.3-1) unstable; urgency=low
 
 ncdu (1.2-1) unstable; urgency=low
 
-  * New upstream releas
+  * New upstream release
   * Modified the $(MAKE) distclean call in debian/rules according to lintian
 
  -- Luca Bedogni <me@lucabedogni.it>  Wed, 25 Jul 2007 08:52:56 +0200
